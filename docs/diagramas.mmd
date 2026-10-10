@@ -1,0 +1,90 @@
+%% ==========================================
+%% DIAGRAMA 1: MODELADO ESTRUCTURAL DE CLASES
+%% ==========================================
+classDiagram
+    direction LR
+
+    class OrdenProduccion {
+        +UUID id
+        +String codigo
+        +DateTime fechaCreacion
+        +String estado
+        +iniciarFabricacion()
+        +cerrarOrden()
+    }
+
+    class ItemDetalleOrden {
+        +UUID id
+        +int cantidadRequerida
+        +float desperdicioEstimado
+    }
+
+    class MateriaPrima {
+        +UUID id
+        +String sku
+        +String descripcion
+        +int stockActual
+        +int stockMinimo
+        +reservarStock(int cantidad)
+    }
+
+    class OperarioPlanta {
+        +UUID id
+        +String documento
+        +String nombreCompleto
+        +String cargo
+    }
+
+    class TurnoTrabajo {
+        +UUID id
+        +DateTime horaInicio
+        +DateTime horaFin
+    }
+
+    class LiquidacionNomina {
+        +UUID id
+        +float valorTotal
+        +boolean conciliadoBanco
+        +procesarPago()
+    }
+
+    %% Reglas Semánticas Obligatorias:
+    OrdenProduccion "1" *-- "1..*" ItemDetalleOrden : Composicion (Destruccion en cascada)
+    ItemDetalleOrden "1..*" o-- "1" MateriaPrima : Agregacion (Materia prima sobrevive)
+    OperarioPlanta "1" o-- "0..*" TurnoTrabajo : Agregacion (Operario sobrevive al turno)
+    OrdenProduccion "1" --> "1" LiquidacionNomina : Notifica Cierre
+
+%% ==============================================
+%% DIAGRAMA 2: FLUJO TRANSACCIONAL DE SECUENCIA
+%% ==============================================
+sequenceDiagram
+    autonumber
+    actor JefePlanta as Jefe de Planta
+    participant Prod as Modulo Produccion
+    participant Inv as Modulo Inventario
+    participant Compras as Modulo Compras
+    participant Nomina as Modulo Nomina
+
+    JefePlanta->>Prod: crearOrdenProduccion(lote, insumos)
+    activate Prod
+    Prod->>+Inv: consultarDisponibilidad(insumos)
+    
+    alt Stock Insuficiente
+        Inv-->>Prod: StockRechazado(faltante)
+        opt Alerta Reabastecimiento
+            Inv-)Compras: emitirAlertaReordenAsincrona(insumos)
+        end
+        Prod-->>JefePlanta: Error: Stock por debajo del minimo
+    else Stock Suficiente
+        Inv-->>-Prod: StockConfirmado(reservaId)
+        Prod->>Prod: asignarOperariosATurno()
+        Prod-->>JefePlanta: OrdenEnProceso(ordenId)
+        deactivate Prod
+        
+        Note over Prod: Finalizacion de Produccion en Planta
+        Prod-)Nomina: notificarOrdenTerminadaAsincrona(ordenId)
+        activate Nomina
+        Nomina->>Nomina: conciliarFondosBancarios()
+        Nomina-->>Nomina: liquidarNominaOperarios()
+        deactivate Nomina
+    end
